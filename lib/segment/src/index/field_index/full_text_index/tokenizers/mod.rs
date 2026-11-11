@@ -970,4 +970,36 @@ mod tests {
         PrefixTokenizer::tokenize_query(&text, &tokens_processor, |t| query.push(t.into_owned()));
         assert_eq!(query, [cut]);
     }
+
+    /// Greek Snowball stemming used to slice past the end of the word and panic.
+    ///
+    /// https://github.com/qdrant/qdrant/issues/11386
+    #[test]
+    fn test_stemming_greek_does_not_panic() {
+        let mut tokens_processor = TokensProcessor::new(
+            true,
+            false,
+            Default::default(),
+            Some(make_stemmer(SnowballLanguage::Greek)),
+            None,
+            None,
+        );
+
+        let mut tokens = Vec::new();
+        WordTokenizer::tokenize("αντίθετε", &tokens_processor, |token| {
+            tokens.push(token.into_owned())
+        });
+        assert_eq!(tokens.len(), 1);
+        assert!(!tokens[0].is_empty());
+
+        // Print stems for a few words so a stemmer upgrade that changes them is visible in the log.
+        let stemmer = make_stemmer(SnowballLanguage::Greek);
+        for word in ["γεια", "ανθρωπος", "καλημερα"] {
+            println!("{word} -> {}", stemmer.stem(std::borrow::Cow::Borrowed(word)));
+        }
+        println!(
+            "αντίθετε -> {}",
+            stemmer.stem(std::borrow::Cow::Borrowed("αντίθετε"))
+        );
+    }
 }
