@@ -61,7 +61,7 @@ jobs:
       - name: Build model testing binary
         run: |
           RUSTFLAGS="--cfg tokio_unstable" \
-            cargo build --bin model_testing --features service_debug --profile perf
+            cargo build --bin model_testing --features "service_debug edge-verify" --profile perf
         shell: bash
         timeout-minutes: 60
       # Resolve the per-run parameters. workflow_dispatch inputs override the env
@@ -88,6 +88,9 @@ jobs:
           fi
         shell: bash
       # Both runs reuse the single binary built above and share the same seed.
+      # `--edge-verify` opens a read-only Edge follower per shard and compares it at
+      # quiesced checkpoints; it also forces the serverless_compatible feature-flag
+      # bundle (manifest discovery + append-only mutations).
       - name: Run model testing (async scorer)
         id: async_scorer
         run: |
@@ -98,7 +101,8 @@ jobs:
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
             --on-disk \
-            --async-scorer
+            --async-scorer \
+            --edge-verify
         shell: bash
         timeout-minutes: 360
       - name: Run model testing (no io_uring)
@@ -112,7 +116,8 @@ jobs:
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
-            --on-disk
+            --on-disk \
+            --edge-verify
         shell: bash
         timeout-minutes: 360
       # Which of the two passes broke is the first thing triage needs: one failing while the

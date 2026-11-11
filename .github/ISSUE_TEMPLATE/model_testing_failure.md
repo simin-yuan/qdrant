@@ -7,7 +7,7 @@ labels: bug, model testing
 
 The nightly model testing job failed.
 
-- Seed: `{{ env.SEED }}` (reproduce with `--seed {{ env.SEED }}`)
+- Seed: `{{ env.SEED }}` (reproduce with `--features "service_debug edge-verify"` and `--seed {{ env.SEED }} --edge-verify`)
 - Date: {{ date | date('DD.MM.YYYY HH:mm') }}
 - Failed: {{ env.FAILED_PASSES }}
 - [Failed run](https://github.com/{{ env.REPOSITORY }}/actions/runs/{{ env.RUN_ID }})
