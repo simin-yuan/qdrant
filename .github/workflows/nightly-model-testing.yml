@@ -87,10 +87,10 @@ jobs:
             echo "SEED=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_ENV"
           fi
         shell: bash
-      # Both runs reuse the single binary built above and share the same seed.
-      # `--edge-verify` opens a read-only Edge follower per shard and compares it at
-      # quiesced checkpoints; it also forces the serverless_compatible feature-flag
-      # bundle (manifest discovery + append-only mutations).
+      # All passes reuse the single binary built above and share the same seed.
+      # The first two keep default (non-edge) coverage: async scorer vs no io_uring.
+      # The third adds Edge follower checkpoints via `--edge-verify` (also forces the
+      # serverless_compatible feature-flag bundle: manifest discovery + append-only).
       - name: Run model testing (async scorer)
         id: async_scorer
         run: |
@@ -101,8 +101,7 @@ jobs:
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
             --on-disk \
-            --async-scorer \
-            --edge-verify
+            --async-scorer
         shell: bash
         timeout-minutes: 360
       - name: Run model testing (no io_uring)
@@ -116,28 +115,47 @@ jobs:
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
+            --on-disk
+        shell: bash
+        timeout-minutes: 360
+      - name: Run model testing (edge-verify)
+        id: edge_verify
+        # Run even if an earlier pass failed, so Edge coverage is still collected.
+        if: ${{ !cancelled() }}
+        run: |
+          target/perf/model_testing \
+            --seed "$SEED" \
+            --op-num "$OP_NUM" \
+            --shard-count "$SHARD_COUNT" \
+            --restart-probability "$RESTART_PROBABILITY" \
+            --id-pool "$ID_POOL" \
             --on-disk \
             --edge-verify
         shell: bash
         timeout-minutes: 360
-      # Which of the two passes broke is the first thing triage needs: one failing while the
-      # other survives the same seed points at the io_uring read path (or rules it out), and
-      # every failure so far has split that way. Rendered here rather than in the issue template
-      # so the template stays a plain fill-in-the-blanks form.
+      # Which passes broke is the first thing triage needs: async vs no-io_uring splits still
+      # point at the io_uring read path, and edge-verify isolates follower/append-only
+      # divergences. Rendered here rather than in the issue template so the template stays a
+      # plain fill-in-the-blanks form.
       - name: Describe which passes failed
         if: ${{ failure() && github.event_name == 'schedule' }}
         env:
           ASYNC: ${{ steps.async_scorer.conclusion }}
           PLAIN: ${{ steps.no_io_uring.conclusion }}
+          EDGE: ${{ steps.edge_verify.conclusion }}
         run: |
-          if [ "$ASYNC" = failure ] && [ "$PLAIN" = failure ]; then
-            summary="both passes"
-          elif [ "$ASYNC" = failure ]; then
-            summary="async scorer only (no io_uring passed the same seed)"
-          elif [ "$PLAIN" = failure ]; then
-            summary="no io_uring only (async scorer passed the same seed)"
+          failed=()
+          [ "$ASYNC" = failure ] && failed+=("async scorer")
+          [ "$PLAIN" = failure ] && failed+=("no io_uring")
+          [ "$EDGE" = failure ] && failed+=("edge-verify")
+          if [ "${#failed[@]}" -eq 0 ]; then
+            summary="no model-testing pass, the job broke around them (async=$ASYNC, no-io_uring=$PLAIN, edge-verify=$EDGE)"
+          elif [ "${#failed[@]}" -eq 3 ]; then
+            summary="all three passes"
           else
-            summary="neither pass, the job broke around them (async=$ASYNC, no-io_uring=$PLAIN)"
+            # Join with ", " then rewrite the last separator to " and " for readability.
+            summary=$(IFS=', '; echo "${failed[*]}" | sed 's/, \([^,]*\)$/ and \1/')
+            summary="$summary only"
           fi
           echo "FAILED_PASSES=$summary" >> "$GITHUB_ENV"
         shell: bash
