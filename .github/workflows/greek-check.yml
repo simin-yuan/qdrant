@@ -1,0 +1,21 @@
+name: greek-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Branch or SHA to check out"
+        required: true
+
+jobs:
+  greek-stemmer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Greek stemmer regression test
+        run: cargo test -p segment --lib test_stemming_greek -- --nocapture
